@@ -4,30 +4,8 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/list.h>
 #include <WiFiManager.h> 
-#include <time.h>
-#include <Firebase_ESP_Client.h>
-#include "addons/TokenHelper.h"
-#include "addons/RTDBHelper.h"
-#include "freertos/semphr.h"
 #include <LiquidCrystal_I2C.h>
-
-//firebase
-#define API_KEY "AIzaSyCNJugv3_95Fwq36fm9lmyRuho2sJ8OOM8"
-#define DATABASE_URL "https://smartdoorlock-40077-default-rtdb.asia-southeast1.firebasedatabase.app/" 
-FirebaseData fbdo;
-FirebaseData fbda;
-FirebaseJson json;
-FirebaseAuth auth;
-FirebaseConfig config;
-bool signupOK = false;
-
-//NTP 
-const char* ntpServer = "pool.ntp.org";
-const long  gmtOffset_sec = 21600;
-const int   daylightOffset_sec = 3600;
-char waktu[20];
-char waktud[20];
-
+#include <HTTPClient.h>
 //RFID
 #define RST_PIN         15          
 #define SS_PIN          5    
@@ -36,8 +14,8 @@ MFRC522::MIFARE_Key key;
 char uid[10];
 
 //LCD
-#define I2C_SDA 25
-#define I2C_SCL 26
+#define I2C_SDA 21
+#define I2C_SCL 22
 LiquidCrystal_I2C lcd(0x27, 16, 2);
 
 //wifi
@@ -60,11 +38,6 @@ void baca_kartu(void * parameters){
       if (ulang==0)
       {
         lcd.clear();
-        struct tm timeinfo;
-        getLocalTime(&timeinfo);
-        strftime(waktud,20,"%d %b %y, %H:%M:%S", &timeinfo);
-        lcd.setCursor(0,1);
-        lcd.print(waktud);
         lcd.setCursor(0,0);
         lcd.print("Tempelkan kartu!");
         ulang++;
@@ -86,7 +59,7 @@ void baca_kartu(void * parameters){
 	} else
   {
     stale=false;
-    sprintf(uid, "%d %d %d %d", mfrc522.uid.uidByte[0],mfrc522.uid.uidByte[1],mfrc522.uid.uidByte[2],mfrc522.uid.uidByte[3]);
+    sprintf(uid, "%d%d%d%d", mfrc522.uid.uidByte[0],mfrc522.uid.uidByte[1],mfrc522.uid.uidByte[2],mfrc522.uid.uidByte[3]);
     
     Serial.print("Uid is:");
     printHex(mfrc522.uid.uidByte, mfrc522.uid.size);
@@ -98,7 +71,6 @@ void baca_kartu(void * parameters){
     lcd.print(uid);
     Serial.println();
     Serial.print("Waktu absen:");
-    printLocalTime();
     Serial.println();
     xSemaphoreGive(xSemaphore);
     digitalWrite(21,LOW);
@@ -112,56 +84,73 @@ void baca_kartu(void * parameters){
   }
 }
 
+
+
 void kirim_data(void * parameters){
   for(;;){
     if(xSemaphoreTake(xSemaphore,portMAX_DELAY)){
-      json.set("UID",uid );
-      json.set("time",waktu);
-    if (Firebase.ready() && signupOK ){
     
-    if (Firebase.RTDB.pushJSON(&fbdo,"uid/history_log",&json)){
-      Serial.println("PASSED");
-    }
-    else {
-      Serial.println("FAILED");
-      Serial.println("REASON: " + fbdo.errorReason());
-    }
-    char find[50];
-    sprintf(find,"uid/access/%s",uid);
-    Serial.println(find);
+  char payload[100];
+  sprintf(payload,"http://192.168.184.224/api/rfid/%s",uid);  
+  Serial.println(payload); 
+  // String payload= "http://192.168.184.224/api/rfid/120399";
+  //send_data
+  HTTPClient http;
+  String serverpath = payload;
+  http.begin(serverpath);
+  int httpResponseCode = http.GET();
+  Serial.print("HTTP Response code: ");
+  Serial.println(httpResponseCode);
+  Serial.println(http.getString());
+  http.end();
     
-    if (Firebase.RTDB.getJSON(&fbda, find))
-    {
-      Serial.println(fbda.stringData());
-      lcd.clear();
-      lcd.setCursor(0,0);
-      lcd.print("Berhasil absen!");
-      lcd.setCursor(0,1);
-      lcd.print(fbda.stringData());
-      digitalWrite(21,LOW);
-      vTaskDelay(500/portTICK_PERIOD_MS);
-      digitalWrite(21,HIGH);
-      stale=true;
-    }
-    else
-    {
-      // Failed to get JSON data at defined database path, print out the error reason
-    Serial.println(fbda.errorReason());
-    lcd.clear();
-    lcd.setCursor(0,0);
-    lcd.print("Kartu tidak");
-    lcd.setCursor(0,1);
-    lcd.print("terdaftar");
-    digitalWrite(21,LOW);
-      vTaskDelay(500/portTICK_PERIOD_MS);
-      digitalWrite(21,HIGH);
-      vTaskDelay(200/portTICK_PERIOD_MS);
-      digitalWrite(21,LOW);
-      vTaskDelay(500/portTICK_PERIOD_MS);
-      digitalWrite(21,HIGH);
-    stale=true;
-    }
-    }
+    //   json.set("UID",uid );
+    //   json.set("time",waktu);
+    // if (Firebase.ready() && signupOK ){
+    
+    // if (Firebase.RTDB.pushJSON(&fbdo,"uid/history_log",&json)){
+    //   Serial.println("PASSED");
+    // }
+    // else {
+    //   Serial.println("FAILED");
+    //   Serial.println("REASON: " + fbdo.errorReason());
+    // }
+    // char find[50];
+    // sprintf(find,"uid/access/%s",uid);
+    // Serial.println(find);
+    
+    // if (Firebase.RTDB.getJSON(&fbda, find))
+    // {
+    //   Serial.println(fbda.stringData());
+    //   lcd.clear();
+    //   lcd.setCursor(0,0);
+    //   lcd.print("Berhasil absen!");
+    //   lcd.setCursor(0,1);
+    //   lcd.print(fbda.stringData());
+    //   digitalWrite(21,LOW);
+    //   vTaskDelay(500/portTICK_PERIOD_MS);
+    //   digitalWrite(21,HIGH);
+    //   stale=true;
+    // }
+    // else
+    // {
+    //   // Failed to get JSON data at defined database path, print out the error reason
+    // Serial.println(fbda.errorReason());
+    // lcd.clear();
+    // lcd.setCursor(0,0);
+    // lcd.print("Kartu tidak");
+    // lcd.setCursor(0,1);
+    // lcd.print("terdaftar");
+    // digitalWrite(21,LOW);
+    //   vTaskDelay(500/portTICK_PERIOD_MS);
+    //   digitalWrite(21,HIGH);
+    //   vTaskDelay(200/portTICK_PERIOD_MS);
+    //   digitalWrite(21,LOW);
+    //   vTaskDelay(500/portTICK_PERIOD_MS);
+    //   digitalWrite(21,HIGH);
+    // stale=true;
+    // }
+    // }
     
   }
   }
@@ -210,31 +199,6 @@ void setup() {
   delay(5000);
   Serial.println();
 
-  // firebase
-  config.api_key = API_KEY;
-  config.database_url = DATABASE_URL;
-
-  while (!Firebase.signUp(&config, &auth, "", "")){
-    Serial.printf("%s\n", config.signer.signupError.message.c_str());
-    Firebase.signUp(&config, &auth, "", "");
-  }
-  Serial.println("ok");
-  signupOK = true;
-
-  /* Assign the callback function for the long running token generation task */
-  config.token_status_callback = tokenStatusCallback; //see addons/TokenHelper.h
-  Firebase.begin(&config, &auth);
-  Firebase.reconnectWiFi(true);
-
-  //waktu
-  struct tm timeinfo;
-  while (!getLocalTime(&timeinfo))
-  {
-    Serial.println("Failed to obtain time trying again...");
-    configTime(gmtOffset_sec,daylightOffset_sec,ntpServer);
-  }
-  printLocalTime();
-
   
 
   xSemaphore = xSemaphoreCreateBinary();
@@ -260,14 +224,4 @@ void printHex(byte *buffer, byte bufferSize) {
 }
 
 
-void printLocalTime()
-{
-  struct tm timeinfo;
-  if(!getLocalTime(&timeinfo)){
-    Serial.println("Failed to obtain time");
-    return;
-  }
-  Serial.print(&timeinfo, "%A, %B %d %Y %H:%M:%S");
-  strftime(waktu,20,"%d %B %Y, %H:%M:%S", &timeinfo);
-}
 
